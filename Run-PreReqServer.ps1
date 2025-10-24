@@ -1,3 +1,85 @@
+<#
+.SYNOPSIS
+    Prepares a Windows server with common prerequisites required by Visma services.
+
+.DESCRIPTION
+    This script downloads and installs a set of prerequisites commonly required by server
+    components such as Visma Integration services. It can configure regional settings,
+    create required folders and a local group, download installers (with optional signature
+    verification), and run silent installs for components such as:
+      - .NET Framework 4.8
+      - ASP.NET Core 8 Hosting Bundle
+      - Visual C++ Redistributables (x86/x64)
+      - Microsoft ODBC Driver 17 for SQL Server
+      - Microsoft OLE DB Driver 18 (with version check)
+
+    The script supports modes to install only relevant components for different server
+    types (viw, batch, puf) or an all-in-one mode.
+
+.NOTES
+    - This script must be run as Administrator (the script checks for elevation).
+    - By default locale changes are disabled; use -ConfirmLocaleChange to opt in.
+    - Use -DryRun to show actions without executing downloads or installers.
+    - The script writes logs to $Destination\install.log by default (can be overridden with -LogFile).
+
+PARAMETER viw
+    Select Visual Integration/Web (VIW) server prereqs only.
+
+PARAMETER batch
+    Select Batch server prereqs only.
+
+PARAMETER puf
+    Select PUF server prereqs only.
+
+PARAMETER AllInOne
+    Shortcut to run viw, batch and puf installs (equivalent to -viw -batch -puf).
+    Note: Do not combine -AllInOne with any of -viw, -batch or -puf.
+
+PARAMETER Destination
+    Path where installers and temporary downloads will be stored.
+    Default: D:\visma\Install\Serverdownloads
+
+PARAMETER BackupFolder
+    Path where backup scripts and additional downloaded items are saved.
+    Default: D:\visma\Install\Backup
+
+PARAMETER ConfirmLocaleChange
+    When present, allows the script to change user/system locale, language list and home location
+    to the region specified in the script (default: sv-SE, Sweden).
+    It is intentionally an explicit opt-in.
+
+PARAMETER DryRun
+    When present, the script will not perform downloads, installer execution, or make system
+    changes. It will log actions that would have been performed.
+
+PARAMETER LogFile
+    Optional full path to a log file. If not provided the script will create:
+      $Destination\install.log
+
+.EXAMPLE
+    # Show what would be done for PUF servers (no changes performed)
+    .\Run-PreReqServer.ps1 -puf -DryRun
+
+.EXAMPLE
+    # Run an all-in-one install and allow locale changes (non-interactive)
+    .\Run-PreReqServer.ps1 -AllInOne -ConfirmLocaleChange
+
+.EXAMPLE
+    # Run only Visual Integration/Web installs and write log to custom file
+    .\Run-PreReqServer.ps1 -viw -LogFile "C:\temp\visma_install.log"
+
+.AUTHOR
+    Maintainer: DambergC
+    Repository: https://github.com/DambergC/Run-ServerPreReq
+
+.LASTMODIFIED
+    2025-10-24
+
+.LICENSE
+    Please refer to repository license for terms (if present).
+
+#>
+
 
 Param(
     [switch]$viw,
