@@ -1,14 +1,3 @@
-<#
-Updated Run-ServerPreReq.ps1
-- Adds elevation check and TLS configuration
-- Parameterizes destination and backup paths
-- Adds logging to file and console via Write-Log
-- Adds DryRun mode to simulate downloads/installs
-- Adds ConfirmLocaleChange switch (no locale changes unless explicitly confirmed)
-- Rewrites Test-OleDbDriver18Installed for more robust detection
-- Verifies Authenticode signature where feasible for downloaded installers (warns if absent/invalid)
-- Keeps original functionality and mode switches (-viw, -batch, -puf, -AllInOne)
-#>
 
 Param(
     [switch]$viw,
