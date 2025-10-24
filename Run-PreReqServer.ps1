@@ -898,6 +898,7 @@ if ($RunPUF -or $Runpuf) {  # keep case-insensitive compatibility
 }
 if ($RunBatch) {
     Install-NetFramework48
+    Install-AspNetCore8
     Install-OleDbDriver18
     Install-VisualCRedistributable
     Install-OdbcDriver17
