@@ -195,8 +195,9 @@ if ($errors.Count -gt 0) { exit 1 } else { exit 0 }
 
 ## CHANGELOG (short)
 
+- 2025-10-27 - Changed colors in output and added download of PersonecPregfix.exe
 - 2025-10-24 — Added improved OLE DB Driver 18 version checks, added Authenticode verification for downloads, improved logging; modularized installs and added DryRun support.
-- 2025-01-15 — Initial script that downloads and installs the common Visma server prerequisites.
+- 2025-10-15 — Initial script that downloads and installs the common Visma server prerequisites.
 
 ---
 
