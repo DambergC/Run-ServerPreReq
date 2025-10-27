@@ -644,9 +644,8 @@ function Install-NetFramework48 {
         else { Write-Log ".NET installer exited with code $($proc.ExitCode)" "WARN" }
     } catch {
         Write-Log "Error running .NET installer: $_" "ERROR"
-    } finally {
-        try { Remove-Item $dotNetExe -Force -ErrorAction SilentlyContinue } catch { }
     }
+    # NOTE: Installers are intentionally retained in $Destination (no automatic deletion)
 }
 
 function Install-AspNetCore8 {
@@ -683,9 +682,8 @@ function Install-AspNetCore8 {
         }
     } catch {
         Write-Log "Error running ASP.NET Core installer: $_" "ERROR"
-    } finally {
-        try { Remove-Item $aspNetCoreExe -Force -ErrorAction SilentlyContinue } catch { }
     }
+    # NOTE: Installer left in $Destination for later reuse
 }
 function Install-VisualCRedistributable {
     Write-Log "Checking Visual C++ Redistributables..." "INFO"
@@ -713,9 +711,8 @@ function Install-VisualCRedistributable {
             else { Write-Log "Visual C++ ($arch) installer exit code $($process.ExitCode)" "WARN" }
         } catch {
             Write-Log "Failed to run Visual C++ installer for $arch $_" "ERROR"
-        } finally {
-            try { Remove-Item $outfile -Force -ErrorAction SilentlyContinue } catch { }
         }
+        # NOTE: Do not delete $outfile - keep installers in $Destination
     }
 }
 
@@ -740,9 +737,8 @@ function Install-OdbcDriver17 {
         else { Write-Log "ODBC Driver 17 installer exit code $($process.ExitCode)" "WARN" }
     } catch {
         Write-Log "Failed to run msiexec for ODBC Driver 17: $_" "ERROR"
-    } finally {
-        try { Remove-Item $outFile -Force -ErrorAction SilentlyContinue } catch { }
     }
+    # NOTE: MSI is kept in $Destination for future use
 }
 
 function Install-OleDbDriver18 {
@@ -766,9 +762,8 @@ function Install-OleDbDriver18 {
         else { Write-Log "OLE DB installer exit code $($proc.ExitCode)" "WARN" }
     } catch {
         Write-Log "Failed to run OLE DB installer: $_" "ERROR"
-    } finally {
-        try { Remove-Item $oleDbMsi -Force -ErrorAction SilentlyContinue } catch { }
     }
+    # NOTE: MSI is intentionally kept in $Destination
 }
 
 # Region language configuration section.
