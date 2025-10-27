@@ -287,6 +287,90 @@ function Download-File {
 # Detection & install helpers
 # =========================
 
+function Ensure-PersonecPRegFixDownloaded {
+    <#
+    Ensures PersonecPRegFix.exe is downloaded to a destination path.
+    - Does NOT run the executable.
+    - Does NOT verify Authenticode signature.
+    - Respects $Destination and $DryRun if they exist in the calling script; you can pass a custom OutFile.
+    Returns: $true on success (file present and non-zero size), $false on failure.
+    #>
+    param(
+        [string]$Url = 'https://github.com/DambergC/Run-ServerPreReq/releases/latest/download/PersonecPRegFix.exe',
+        [string]$OutFile = (Join-Path $Destination 'PersonecPRegFix.exe')
+    )
+
+    if (-not $OutFile) { throw "OutFile must be provided or \$Destination must be set in scope." }
+
+    Write-Log "Ensuring PersonecPRegFix is present at $OutFile" "INFO"
+
+    # If file already exists and is non-zero, consider it downloaded
+    if (Test-Path $OutFile) {
+        try {
+            $fi = Get-Item $OutFile -ErrorAction Stop
+            if ($fi.Length -gt 0) {
+                Write-Log "PersonecPRegFix already downloaded: $OutFile (size: $($fi.Length) bytes)" "SUCCESS"
+                return $true
+            } else {
+                Write-Log "Existing file is zero bytes; will re-download." "WARN"
+                Remove-Item $OutFile -Force -ErrorAction SilentlyContinue
+            }
+        } catch {
+            Write-Log "Unable to inspect existing file $OutFile $_" "WARN"
+        }
+    }
+
+    if ($DryRun) {
+        Write-Log "[DryRun] Would download $Url to $OutFile" "INFO"
+        return $true
+    }
+
+    # Prefer existing Download-File helper if available (without signature verification)
+    if (Get-Command -Name Download-File -ErrorAction SilentlyContinue) {
+        if (-not (Download-File -Url $Url -OutFile $OutFile)) {
+            Write-Log "Download-File helper failed to download PersonecPRegFix." "ERROR"
+            return $false
+        }
+    } else {
+        # Fallback to Invoke-WebRequest then BITS
+        Write-Log "Downloading via Invoke-WebRequest: $Url" "INFO"
+        try {
+            Invoke-WebRequest -Uri $Url -OutFile $OutFile -Headers @{ 'User-Agent' = 'PowerShell' } -TimeoutSec 600 -ErrorAction Stop
+            Write-Log "Download finished: $OutFile" "SUCCESS"
+        } catch {
+            Write-Log "Invoke-WebRequest failed: $($_.Exception.Message). Trying BITS..." "WARN"
+            try {
+                Start-BitsTransfer -Source $Url -Destination $OutFile -ErrorAction Stop
+                Write-Log "Download finished via BITS: $OutFile" "SUCCESS"
+            } catch {
+                Write-Log "Both download methods failed: $($_.Exception.Message)" "ERROR"
+                return $false
+            }
+        }
+    }
+
+    # Confirm file exists and is non-zero
+    try {
+        $fi = Get-Item $OutFile -ErrorAction Stop
+        if ($fi.Length -le 0) {
+            Write-Log "Downloaded file is zero bytes: $OutFile" "ERROR"
+            return $false
+        } else {
+            Write-Log "PersonecPRegFix download confirmed: $OutFile (size: $($fi.Length) bytes)" "SUCCESS"
+            return $true
+        }
+    } catch {
+        Write-Log "Downloaded file not present after download: $_" "ERROR"
+        return $false
+    }
+}
+
+# Example usage:
+# Ensure-PersonecPRegFixDownloaded -OutFile "C:\Temp\PersonecPRegFix.exe"
+# or rely on the script's $Destination variable:
+Ensure-PersonecPRegFixDownloaded
+
+
 function Get-NetFxRelease {
     $regPath = 'HKLM:\SOFTWARE\Microsoft\NET Framework Setup\NDP\v4\Full'
     $props = Get-ItemProperty -Path $regPath -Name Release -ErrorAction SilentlyContinue
