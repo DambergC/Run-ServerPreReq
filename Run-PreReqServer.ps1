@@ -114,7 +114,7 @@ function Write-Log {
         'ERROR'   { Write-Host $line -ForegroundColor Red }
         'WARN'    { Write-Host $line -ForegroundColor Yellow }
         'SUCCESS' { Write-Host $line -ForegroundColor Green }
-        'DEBUG'   { Write-Host $line -ForegroundColor DarkGray }
+        'DEBUG'   { Write-Host $line -ForegroundColor magenta }
         default   { Write-Host $line }
     }
     try {
