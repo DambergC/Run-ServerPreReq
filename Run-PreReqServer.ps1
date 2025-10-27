@@ -315,128 +315,36 @@ function Test-NetFx48Installed {
 
 function Test-AspNetCore8Installed {
     <#
-    .SYNOPSIS
-    Detect ASP.NET Core 8.x+ runtime/hosting bundle with diagnostics.
-
-    .PARAMETER Detailed
-    If present, returns a PSCustomObject with detailed detection info instead of plain $true/$false.
-
-    .EXAMPLE
-    Test-AspNetCore8Installed -Detailed -Verbose
+    Very small, no-switch function.
+    Returns $true if any folder under common shared-framework locations starts with "8." (e.g. 8.0.21).
+    Usage:
+      . .\Test-AspNetCore8Installed.ps1   # dot-source to load the function
+      Test-AspNetCore8Installed
     #>
-    [CmdletBinding()]
-    param(
-        [switch]$Detailed
-    )
 
-    try {
-        function Convert-ToVersion([string]$s) {
-            if (-not $s) { return $null }
-            $clean = ($s -replace '[^0-9\.]', '')
-            try { return [Version]$clean } catch { return $null }
-        }
+    $dirsToCheck = @()
+    if ($env:DOTNET_ROOT) { $dirsToCheck += Join-Path $env:DOTNET_ROOT "shared\Microsoft.AspNetCore.App" }
+    if ($env:ProgramFiles)   { $dirsToCheck += Join-Path $env:ProgramFiles   "dotnet\shared\Microsoft.AspNetCore.App" }
+    if (${env:ProgramFiles(x86)}) { $dirsToCheck += Join-Path ${env:ProgramFiles(x86)} "dotnet\shared\Microsoft.AspNetCore.App" }
+    if ($env:USERPROFILE)   { $dirsToCheck += Join-Path $env:USERPROFILE   ".dotnet\shared\Microsoft.AspNetCore.App" }
+    $dirsToCheck += "/usr/share/dotnet/shared/Microsoft.AspNetCore.App"
+    $dirsToCheck += "/usr/local/share/dotnet/shared/Microsoft.AspNetCore.App"
 
-        $log = [System.Collections.Generic.List[string]]::new()
-
-        # find dotnet
-        $dotnetCmd = (Get-Command dotnet -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source -ErrorAction SilentlyContinue)
-        $log.Add("Get-Command dotnet -> '$dotnetCmd'")
-
-        if (-not $dotnetCmd) {
-            $possible = @()
-            if ($env:ProgramFiles) { $possible += Join-Path $env:ProgramFiles 'dotnet\dotnet.exe' }
-            $pf86 = $env['ProgramFiles(x86)']
-            if ($pf86) { $possible += Join-Path $pf86 'dotnet\dotnet.exe' }
-            $log.Add("Candidate dotnet paths: $($possible -join '; ')")
-            $dotnetCmd = $possible | Where-Object { Test-Path $_ } | Select-Object -First 1
-            $log.Add("Selected dotnetCmd -> '$dotnetCmd'")
-        }
-
-        # 1) dotnet --list-runtimes
-        if ($dotnetCmd -and (Test-Path $dotnetCmd)) {
-            $log.Add("Invoking: $dotnetCmd --list-runtimes")
-            $runtimes = & $dotnetCmd --list-runtimes 2>&1
-            $log.Add("dotnet --list-runtimes output lines: $($runtimes.Count)")
-            foreach ($line in $runtimes) { $log.Add("RUNTIME: $line") }
-
-            $aspNetCoreLines = $runtimes | Where-Object { $_ -match 'Microsoft\.AspNetCore\.App\s+([0-9]+(?:\.[0-9]+){1,2}[^ ]*)' }
-            $log.Add("Matched Microsoft.AspNetCore.App lines: $($aspNetCoreLines.Count)")
-            foreach ($ln in $aspNetCoreLines) {
-                if ($ln -match 'Microsoft\.AspNetCore\.App\s+([0-9]+(?:\.[0-9]+){1,2}[^ ]*)') {
-                    $ver = Convert-ToVersion $matches[1]
-                    $log.Add("Parsed runtime version token '$($matches[1])' -> [Version] '$ver'")
-                    if ($ver -and $ver.Major -ge 8) {
-                        $log.Add("Detected ASP.NET Core runtime via dotnet --list-runtimes, version $ver")
-                        if ($Detailed) { return [PSCustomObject]@{ Found=$true; Method='dotnet --list-runtimes'; Version=$ver.ToString(); Log=$log } }
-                        return $true
-                    }
+    foreach ($d in $dirsToCheck) {
+        if (-not $d) { continue }
+        try {
+            if (Test-Path -LiteralPath $d) {
+                $children = Get-ChildItem -LiteralPath $d -Directory -ErrorAction SilentlyContinue
+                foreach ($c in $children) {
+                    if ($c.Name -like '8.*') { return $true }
                 }
             }
-            $log.Add("No suitable Microsoft.AspNetCore.App >= 8 found in dotnet --list-runtimes output.")
-        } else {
-            $log.Add("dotnet executable not found or not accessible.")
+        } catch {
+            # ignore and continue
         }
-
-        # 2) shared framework folder check
-        $sharedRoots = @()
-        if ($env:ProgramFiles) { $sharedRoots += Join-Path $env:ProgramFiles 'dotnet\shared\Microsoft.AspNetCore.App' }
-        if ($env['ProgramFiles(x86)']) { $sharedRoots += Join-Path $env['ProgramFiles(x86)'] 'dotnet\shared\Microsoft.AspNetCore.App' }
-        $log.Add("Shared roots to check: $($sharedRoots -join '; ')")
-
-        foreach ($root in $sharedRoots) {
-            if (Test-Path $root) {
-                $log.Add("Checking shared root: $root")
-                $dirs = Get-ChildItem -Path $root -Directory -ErrorAction SilentlyContinue
-                foreach ($d in $dirs) {
-                    $log.Add("Found shared folder: $($d.Name)")
-                    $ver = Convert-ToVersion $d.Name
-                    $log.Add("Parsed folder name -> version: $ver")
-                    if ($ver -and $ver.Major -ge 8) {
-                        $log.Add("Detected ASP.NET Core shared framework folder $($d.Name) (>=8)")
-                        if ($Detailed) { return [PSCustomObject]@{ Found=$true; Method='shared-folder'; Version=$d.Name; Log=$log } }
-                        return $true
-                    }
-                }
-            } else {
-                $log.Add("Shared root not present: $root")
-            }
-        }
-
-        # 3) registry uninstall entries
-        $uninstallPaths = @(
-            'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*',
-            'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*'
-        )
-        foreach ($p in $uninstallPaths) {
-            $log.Add("Inspecting registry path: $p")
-            $entries = Get-ItemProperty -Path $p -ErrorAction SilentlyContinue |
-                Where-Object {
-                    $_.DisplayName -and ($_.DisplayName -match 'ASP\.NET Core|ASP.NET Core|Microsoft ASP.NET Core|ASP.NET Core Runtime|Hosting Bundle|ASP\.NET Core Hosting')
-                }
-            foreach ($e in $entries) {
-                $display = $e.DisplayName
-                $verString = $e.DisplayVersion
-                $log.Add("Registry entry: $display - $verString")
-                if ($verString) {
-                    $ver = Convert-ToVersion $verString
-                    $log.Add("Parsed registry version -> $ver")
-                    if ($ver -and $ver.Major -ge 8) {
-                        $log.Add("Detected ASP.NET Core via registry: $display ($verString)")
-                        if ($Detailed) { return [PSCustomObject]@{ Found=$true; Method='registry-uninstall'; Version=$verString; Log=$log } }
-                        return $true
-                    }
-                }
-            }
-        }
-
-        $log.Add("No ASP.NET Core 8+ detected by any method.")
-        if ($Detailed) { return [PSCustomObject]@{ Found=$false; Method='none'; Version=''; Log=$log } }
-        return $false
-    } catch {
-        $err = $_.Exception.Message
-        if ($Detailed) { return [PSCustomObject]@{ Found=$false; Method='error'; Version=''; Error=$err } }
-        return $false
     }
+
+    return $false
 }
 
 
@@ -535,7 +443,8 @@ function Test-OdbcDriver17Installed {
     return $false
 }
 
-# Rewritten: more robust detection for OLE DB Driver 18.x
+
+
 function Test-OleDbDriver18Installed {
     <#
     Checks:
@@ -656,91 +565,42 @@ function Install-NetFramework48 {
     }
 }
 
-
-
 function Install-AspNetCore8 {
-    [CmdletBinding()]
-    param(
-        [Parameter(Mandatory=$false)]
-        [string]$Url = $aspNetCoreUrl,
+    Write-Log "Checking ASP.NET Core 8 installation..." "INFO"
 
-        [switch]$Force
-    )
 
-    if (-not $Url -or [string]::IsNullOrWhiteSpace($Url)) {
-        throw "No URL provided. Set `$aspNetCoreUrl in the caller scope or pass -Url '<installer-url>'."
+    if (Test-AspNetCore8Installed) {
+        Write-Log "ASP.NET Core 8 is already installed." "SUCCESS"
+
+        return
     }
-    write-Log "Checking ASP.NET Core 8 installation..." "INFO"
-    $testFuncName = 'Test-AspNetCore8Installed'
+    Write-Log "ASP.NET Core 8 not detected. Preparing to download and install..." "WARN"
 
-    # Ensure it's actually a function in the current session (not an exe/alias)
-    $testCmd = Get-Command -Name $testFuncName -CommandType Function -ErrorAction SilentlyContinue
-    if ($testCmd) {
-        Write-Verbose "Found test function '$testFuncName' (CommandType: $($testCmd.CommandType))."
-        if (-not $Force) {
-            try {
-                Write-Verbose "Invoking $testFuncName..."
-                $rawResult = & $testFuncName
-                Write-Verbose "Raw result from $testFuncName '$rawResult' (type: $($rawResult.GetType().Name -as [string]))"
-
-                # Convert to a boolean in a defensive way
-                try {
-                    $isInstalled = [bool]$rawResult
-                } catch {
-                    Write-Verbose "Failed to cast raw result to [bool]: $_. Treating as not installed."
-                    $isInstalled = $false
-                }
-
-                if ($isInstalled -eq $true) {
-                    Write-Verbose "Test indicates ASP.NET Core 8 is already installed. Skipping installation."
-                    Write-Log "ASP.NET Core 8 is already installed; skipping installation." "SUCCESS"
-                    return
-                } else {
-                    Write-Verbose "Test indicates ASP.NET Core 8 is NOT installed. Proceeding with installation."
-                    Write-Log "ASP.NET Core 8 not detected; proceeding with download and installation." "WARN"
-                }
-            } catch {
-                # If the test throws, be explicit about it; treat as not installed but show why.
-                Write-Warning "Calling $testFuncName threw an exception: $_. Proceeding with download/install."
-                write-Log "Warning: $testFuncName threw an exception: $_. Proceeding with download/install." "WARN"
-            }
-        } else {
-            Write-Verbose "-Force specified; will install regardless of test result."
-            Write-Log "Force install specified; proceeding with download and installation." "INFO"
-        }
-    } else {
-        Write-Verbose "No function named '$testFuncName' was found in the current session; proceeding to download and install."
+    $aspNetCoreExe = Join-Path $Destination 'dotnet-hosting-aspnetcore8.exe'
+    if (-not (Download-File -Url $aspNetCoreUrl -OutFile $aspNetCoreExe -VerifySignature)) {
+        Write-Log "Failed to download ASP.NET Core 8 installer." "ERROR"
+        return
     }
 
-    $tempFile = Join-Path -Path $env:TEMP -ChildPath ("aspnetcore_installer_{0}.exe" -f ([guid]::NewGuid().ToString()))
+    if ($DryRun) {
+        Write-Log "[DryRun] Would run: $aspNetCoreExe /quiet /norestart" "INFO"
+        return
+    }
+
     try {
-        Write-Verbose "Downloading installer from '$Url' to '$tempFile'..."
-        Invoke-WebRequest -Uri $Url -OutFile $tempFile -ErrorAction Stop
-
-        # Adjust these installer arguments if your specific installer expects different flags.
-        $installArgs = @("/quiet", "/norestart")
-
-        Write-Verbose "Launching installer in current session (assumes required elevation)..."
-        Write-Log "Starting ASP.NET Core 8 installer..." "INFO"
-        $proc = Start-Process -FilePath $tempFile -ArgumentList $installArgs -Wait -PassThru -ErrorAction Stop
-        $exitCode = if ($proc -and $proc.HasExited) { $proc.ExitCode } else { $LASTEXITCODE }
-
-        if ($exitCode -ne 0) {
-            throw "Installer exited with code $exitCode."
+        $installArgs = '/quiet /norestart'
+        $proc = Start-Process -FilePath $aspNetCoreExe -ArgumentList $installArgs -Wait -PassThru
+        if ($proc.ExitCode -eq 0) {
+            Write-Log "ASP.NET Core 8 installation completed successfully." "SUCCESS"
+        } elseif ($proc.ExitCode -eq 3010) {
+            Write-Log "ASP.NET Core 8 installed; restart required." "WARN"
+        } else {
+            Write-Log "ASP.NET Core installer exited with code $($proc.ExitCode)" "WARN"
         }
-
-        Write-Verbose "Installer finished with exit code 0. Installation succeeded."
-        write-Log "ASP.NET Core 8 installation completed successfully." "SUCCESS"
-
-        return @{ Installed = $true; ExitCode = 0 }
-    }
-    catch {
-        throw "Download or installation failed: $_"
-    }
-    finally {
-        if (Test-Path $tempFile) {
-            try { Remove-Item -Path $tempFile -Force -ErrorAction SilentlyContinue } catch { Write-Verbose "Failed to remove temp file: $_" }
-        }
+    } catch {
+        Write-Log "Error running ASP.NET Core installer: $_" "ERROR"
+    } finally {
+        try { Remove-Item $aspNetCoreExe -Force -ErrorAction SilentlyContinue } catch { }
     }
 }
 function Install-VisualCRedistributable {
