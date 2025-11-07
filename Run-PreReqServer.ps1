@@ -1691,14 +1691,14 @@ if ($RunVIW) {
 }
 if ($RunPUF -or $Runpuf) {  # keep case-insensitive compatibility
     Install-NetFramework48
-    Install-AspNetCore8
+    #Install-AspNetCore8
     Install-OleDbDriver18
     Install-VisualCRedistributable
     Install-OdbcDriver17
 }
 if ($RunBatch) {
     Install-NetFramework48
-    Install-AspNetCore8
+    #Install-AspNetCore8
     Install-OleDbDriver18
     Install-VisualCRedistributable
     Install-OdbcDriver17
