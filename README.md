@@ -16,7 +16,8 @@ viw is short for VismaWindow.
 - Requires: Administrator privileges (script checks for elevation)
 - Purpose: Download and install prerequisites such as:
   - .NET Framework 4.8
-  - ASP.NET Core 8 Hosting Bundle
+  - ASP.NET Core 8 Hosting Bundle (only download)
+  - Notepad++ thru Winget
   - Visual C++ Redistributables (x86/x64)
   - Microsoft ODBC Driver 17 for SQL Server
   - Microsoft OLE DB Driver 18 (requires version check >= 18.6.5)
@@ -232,7 +233,7 @@ if ($errors.Count -gt 0) { exit 1 } else { exit 0 }
 
 - Maintainer: DambergC  
 - Repository: https://github.com/DambergC/Run-ServerPreReq  
-- Last modified: 2025-10-24 (as recorded in script header)  
+- Last modified: 2025-11-09 (as recorded in script header)  
 - License: See repository LICENSE (if present)
 
 ```
