@@ -438,7 +438,7 @@ function Test-AspNetCore8Installed {
             if (Test-Path -LiteralPath $d) {
                 $children = Get-ChildItem -LiteralPath $d -Directory -ErrorAction SilentlyContinue
                 foreach ($c in $children) {
-                    if ($c.Name -like '8.*') { return $true }
+                    if ($c.Name -like '8.0.21') { return $true }
                 }
             }
         } catch {
@@ -690,16 +690,16 @@ function Install-AspNetCore8 {
 
     try {
         $installArgs = '/quiet /norestart'
-        $proc = Start-Process -FilePath $aspNetCoreExe -ArgumentList $installArgs -Wait -PassThru
+        #$proc = Start-Process -FilePath $aspNetCoreExe -ArgumentList $installArgs -Wait -PassThru
         if ($proc.ExitCode -eq 0) {
-            Write-Log "ASP.NET Core 8 installation completed successfully." "SUCCESS"
+            #Write-Log "ASP.NET Core 8 installation completed successfully." "SUCCESS"
         } elseif ($proc.ExitCode -eq 3010) {
-            Write-Log "ASP.NET Core 8 installed; restart required." "WARN"
+            #Write-Log "ASP.NET Core 8 installed; restart required." "WARN"
         } else {
-            Write-Log "ASP.NET Core installer exited with code $($proc.ExitCode)" "WARN"
+            #Write-Log "ASP.NET Core installer exited with code $($proc.ExitCode)" "WARN"
         }
     } catch {
-        Write-Log "Error running ASP.NET Core installer: $_" "ERROR"
+        #Write-Log "Error running ASP.NET Core installer: $_" "ERROR"
     }
     # NOTE: Installer left in $Destination for later reuse
 }
