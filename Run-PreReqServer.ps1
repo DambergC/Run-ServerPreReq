@@ -1115,7 +1115,10 @@ if ($RunAll) {
     Install-OleDbDriver18
     Install-VisualCRedistributable
     Install-OdbcDriver17
-    Install-NotepadPP
+	Install-NotepadPP
+	Add-FirewallTcpPorts -Ports 443 -Name 'Visma PBS' -Profile All -Force -Direction Inbound
+	Add-FirewallTcpPorts -Ports 7001 -Name 'Visma PBS' -Profile All -Force -Direction Inbound
+	Add-FirewallTcpPorts -Ports 8080 -Name 'Visma Batch Monitor' -Profile All -Force -Direction Inbound
 }
 
 if ($RunVIW) {
