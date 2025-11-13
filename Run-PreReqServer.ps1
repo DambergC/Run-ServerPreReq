@@ -305,6 +305,247 @@ function Download-File {
 # Detection & install helpers
 # =========================
 
+# Adds firewall rules to allow specified TCP ports
+function Add-FirewallTcpPorts {
+    [CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'Medium')]
+    param(
+        [Parameter(Mandatory = $true, Position = 0, ValueFromPipeline = $true)]
+        [AllowEmptyString()]
+        [object[]]$Ports,
+
+        [Parameter()]
+        [ValidateNotNullOrEmpty()]
+        [string]$Name = 'Allow-TCP-Ports',
+
+        [Parameter()]
+        [ValidateSet('Domain','Private','Public','All','Any')]
+        [string[]]$Profile = @('Domain','Private','Public'),
+
+        [Parameter()]
+        [switch]$Force,
+
+        [Parameter()]
+        [switch]$SingleRule,
+
+        [Parameter()]
+        [ValidateSet('Inbound','Outbound')]
+        [string]$Direction = 'Inbound'
+    )
+
+    begin {
+        if (-not (Get-Command -Name New-NetFirewallRule -ErrorAction SilentlyContinue)) {
+            
+            Write-Host  "NetSecurity cmdlets not found. This function requires New-NetFirewallRule / Get-NetFirewallRule." "ERROR"
+        }
+
+        function Expand-PortSpec {
+            param([string]$spec)
+            $s = $spec.Trim()
+            if ($s -eq '') { return @() }
+
+            if ($s -match ',') {
+                return ($s.Split(',') | ForEach-Object { Expand-PortSpec -spec $_ }) | Where-Object { $_ -ne $null }
+            }
+
+            if ($s -match '^\d+\s*-\s*\d+$') {
+                $parts = $s -split '-'
+                $start = [int]($parts[0].Trim())
+                $end = [int]($parts[1].Trim())
+                if ($start -gt $end) { throw "Invalid port range '$s' (start > end)." }
+                return ($start..$end) | ForEach-Object { $_.ToString() }
+            }
+
+            if ($s -match '^\d+$') {
+                return ,$s
+            }
+
+            
+            Write-Host "Unrecognized port specification: '$spec'. Use numbers, comma-separated lists, or ranges like 5000-5005." "ERROR"
+        }
+
+        function Compress-ToRanges {
+            param([int[]]$ints)
+            if (-not $ints -or $ints.Count -eq 0) { return @() }
+            $sorted = $ints | Sort-Object -Unique
+            $ranges = @()
+            $start = $sorted[0]; $prev = $sorted[0]
+            for ($i = 1; $i -lt $sorted.Count; $i++) {
+                $cur = $sorted[$i]
+                if ($cur -eq $prev + 1) {
+                    $prev = $cur
+                    continue
+                } else {
+                    if ($start -eq $prev) { $ranges += "$start" } else { $ranges += "$start-$prev" }
+                    $start = $cur; $prev = $cur
+                }
+            }
+            # add final segment
+            if ($start -eq $prev) { $ranges += "$start" } else { $ranges += "$start-$prev" }
+            return $ranges
+        }
+
+        # Normalize incoming $Ports into a flat list of port strings/numbers
+        $normalized = @()
+        foreach ($p in $Ports) {
+            if ($null -eq $p) { continue }
+            switch -regex ($p.GetType().Name) {
+                'Int32|Int64' {
+                    $normalized += [string]$p
+                    break
+                }
+                default {
+                    $normalized += Expand-PortSpec -spec ([string]$p)
+                }
+            }
+        }
+
+        $normalized = $normalized | ForEach-Object { $_.Trim() } | Where-Object { $_ -ne '' } | Sort-Object -Unique
+        $invalid = $normalized | Where-Object { -not ($_ -match '^\d+$') -or ([int]$_ -lt 1) -or ([int]$_ -gt 65535) }
+        if ($invalid) {
+            
+            Write-Log "Invalid port numbers detected: $($invalid -join ', '). Ports must be integers between 1 and 65535." "ERROR"
+        }
+
+        $portInts = $normalized | ForEach-Object { [int]$_ }
+
+        # Normalize profile selection: if user specified All or Any, use -Profile 'Any'
+        if ($Profile -contains 'All' -or $Profile -contains 'Any') {
+            $profileParam = 'Any'
+            $profileDisplay = 'All'
+        } else {
+            $profileParam = $Profile
+            $profileDisplay = $Profile -join ','
+        }
+    }
+
+    process {
+        if (-not $portInts -or $portInts.Count -eq 0) {
+            write-log "No valid ports to process." "WARN"   
+            
+            return
+        }
+
+        # helper to create a single rule (used for ranges or single ports)
+        function New-Rule {
+            param($displayName, $localPortValue)
+            $createMsg = "Create rule '$displayName' allowing TCP ports $localPortValue on profiles: $profileDisplay (Direction: $Direction)"
+            if ($PSCmdlet.ShouldProcess($displayName, $createMsg)) {
+                return New-NetFirewallRule `
+                    -DisplayName $displayName `
+                    -Direction $Direction `
+                    -Action Allow `
+                    -Protocol TCP `
+                    -LocalPort $localPortValue `
+                    -Profile $profileParam `
+                    -Enabled True `
+                    -ErrorAction Stop
+            }
+            return $null
+        }
+
+        # helper to remove existing
+        function Remove-If-Exists {
+            param($displayName)
+            $existing = Get-NetFirewallRule -DisplayName $displayName -ErrorAction SilentlyContinue
+            if ($existing) {
+                if (-not $Force) {
+                    Write-Log "A firewall rule named '$displayName' already exists. Use -Force to replace it." "WARN"
+                    return $existing
+                }
+                if ($PSCmdlet.ShouldProcess("Firewall rule '$displayName'","Remove existing rule")) {
+                    Remove-NetFirewallRule -DisplayName $displayName -ErrorAction Stop
+                    Write-Log "Removed existing rule '$displayName'." "INFO"
+                }
+            }
+            return $null
+        }
+
+        if ($SingleRule) {
+            # compress to ranges where possible: e.g. 5000-5005
+            $ranges = Compress-ToRanges -ints $portInts
+            $localPortString = ($ranges -join ',') # e.g. "80,443,5000-5005"
+            $displayName = "$Name - $Direction TCP $localPortString"
+
+            # remove existing if requested
+            try {
+                Remove-If-Exists -displayName $displayName
+            } catch {
+                Write-Log "Failed to remove existing rule '$displayName': $_" "ERROR"
+            }
+
+            try {
+                $rule = New-Rule -displayName $displayName -localPortValue $localPortString
+                return $rule
+                Write-Host "$rule created for specified ports." "SUCCESS"
+            } catch {
+                $err = $_.Exception.Message
+                # If New-NetFirewallRule errors with the "port is invalid" message, fall back to creating per-port/per-range rules
+                if ($err -match 'The port is invalid') {
+                    
+                    Write-Log "Single-rule creation failed with 'The port is invalid'. Falling back to creating per-port/per-range rules." "WARN"
+                    # Create one rule per compressed range/port
+                    $created = @()
+                    foreach ($segment in $ranges) {
+                        $segDisplay = "$Name - $Direction TCP $segment"
+                        try {
+                            # Remove existing per-segment rule if present and -Force
+                            Remove-If-Exists -displayName $segDisplay
+                        } catch {
+                            
+                            Write-Log "Failed to remove existing rule '$segDisplay': $_" "ERROR"
+                        }
+
+                        try {
+                            $r = New-Rule -displayName $segDisplay -localPortValue $segment
+                            if ($r) { $created += $r }
+                        } catch {
+                            
+                            Write-Log "Failed to create firewall rule '$segDisplay': $_" "ERROR"
+                        }
+                    }
+                    return $created
+                    Write-Host "Firewall rules $created created for specified ports." "SUCCESS"
+                } else {
+                    
+                    Write-Log "Failed to create firewall rule '$displayName': $_" "ERROR"
+                }
+            }
+        } else {
+            # default: create per compressed range/port (reduces rules where contiguous ports can group)
+            $ranges = Compress-ToRanges -ints $portInts
+            $created = @()
+            foreach ($segment in $ranges) {
+                $segDisplay = "$Name - $Direction TCP $segment"
+                try {
+                    # If existing and no Force, return existing
+                    $existing = Get-NetFirewallRule -DisplayName $segDisplay -ErrorAction SilentlyContinue
+                    if ($existing) {
+                        if (-not $Force) {
+                            
+                            write-log "A firewall rule named '$segDisplay' already exists. Use -Force to replace it." "WARN"
+                            $created += $existing
+                            continue
+                        } else {
+                            if ($PSCmdlet.ShouldProcess("Firewall rule '$segDisplay'","Remove existing rule")) {
+                                Remove-NetFirewallRule -DisplayName $segDisplay -ErrorAction Stop
+                            }
+                        }
+                    }
+
+                    $r = New-Rule -displayName $segDisplay -localPortValue $segment
+                    if ($r) { $created += $r }
+                } catch {
+                    
+                    Write-Log "Failed to create firewall rule '$segDisplay': $_" "ERROR"
+                }
+            }
+            return $created
+            Write-Host "Firewall rules created for specified ports." "SUCCESS"
+        }
+    }
+}
+
+
 function Ensure-PersonecPRegFixDownloaded {
     <#
     Ensures PersonecPRegFix.exe is downloaded to a destination path.
@@ -870,7 +1111,7 @@ if (Test-Path $cygateBackup) {
 # Run installs according to selected modes
 if ($RunAll) {
     Install-NetFramework48
-    #Install-AspNetCore8
+    Install-AspNetCore8
     Install-OleDbDriver18
     Install-VisualCRedistributable
     Install-OdbcDriver17
@@ -883,7 +1124,7 @@ if ($RunVIW) {
 }
 if ($RunPUF) {
     Install-NetFramework48
-    #Install-AspNetCore8
+    Install-AspNetCore8
     Install-OleDbDriver18
     Install-VisualCRedistributable
     Install-OdbcDriver17
@@ -891,11 +1132,14 @@ if ($RunPUF) {
 }
 if ($RunBatch) {
     Install-NetFramework48
-    #Install-AspNetCore8
+    Install-AspNetCore8
     Install-OleDbDriver18
     Install-VisualCRedistributable
     Install-OdbcDriver17
     Install-NotepadPP
+    Add-FirewallTcpPorts -Ports 443 -Name 'Visma PBS' -Profile All -Force -Direction Inbound 
+    Add-FirewallTcpPorts -Ports 7001 -Name 'Visma PBS' -Profile All -Force -Direction Inbound 
+    Add-FirewallTcpPorts -Ports 8080 -Name 'Visma Batch Monitor' -Profile All -Force -Direction Inbound 
 }
 
 
