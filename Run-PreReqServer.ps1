@@ -186,7 +186,7 @@ $links = @{
 $redirectUrl = 'https://go.microsoft.com/fwlink/?linkid=2266337'   # ODBC Driver 17
 $dotNetUrl = 'https://go.microsoft.com/fwlink/?linkid=2085155'    # .NET 4.8 offline/web redirect
 $oleDbUrl = 'https://go.microsoft.com/fwlink/?linkid=2218891'     # OLE DB Driver 18 x64
-$aspNetCoreUrl = 'https://builds.dotnet.microsoft.com/dotnet/aspnetcore/Runtime/8.0.21/dotnet-hosting-8.0.21-win.exe'
+$aspNetCoreUrl = 'https://builds.dotnet.microsoft.com/dotnet/aspnetcore/Runtime/8.0.22/dotnet-hosting-8.0.22-win.exe'
 
 # System locale settings
 $culture = Get-Culture
